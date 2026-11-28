@@ -1,0 +1,17 @@
+// startup: arranca con el juego y lanza los demas scripts. Lenguaje y comandos: docs/SCRIPTS.md.
+
+Hud.help("Apreta M para una mision de prueba: llevar un taxi");
+var avisoHasta = time() + 10000;
+
+while (true) {
+    if (avisoHasta > 0 && time() > avisoHasta) {
+        Hud.clearHelp();
+        avisoHasta = 0;
+    }
+    if (Input.pressed("menu") && !Mission.active()) {
+        Hud.clearHelp();
+        avisoHasta = 0;
+        Script.start("mision_taxi");
+    }
+    wait(0);
+}

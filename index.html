@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Buenos Vientos</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #05070d; overflow: hidden;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #e8ecf4; }
+  #canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; outline: none; }
+  .panel { position: fixed; top: 16px; left: 16px; width: 280px; padding: 16px 18px;
+    max-height: calc(100vh - 32px); overflow-y: auto; box-sizing: border-box;
+    background: rgba(8, 11, 20, 0.72); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  h1 { margin: 0; font-size: 18px; letter-spacing: 0.02em; }
+  .sub { margin: 4px 0 14px; font-size: 12px; color: #9aa4b8; }
+  .stats { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; font-size: 13px; }
+  .stats span:nth-child(even) { font-variant-numeric: tabular-nums; text-align: right; }
+  .label { color: #9aa4b8; }
+  .zone { font-size: 15px; font-weight: 600; margin: -4px 0 12px; color: #f2c27a; }
+  .keys { margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.08);
+    display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font-size: 12px; color: #9aa4b8; }
+  .keys b { color: #e8ecf4; font-weight: 600; white-space: nowrap; }
+  .hint { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); padding: 10px 16px;
+    background: rgba(8,11,20,0.72); border-radius: 10px; font-size: 14px; pointer-events: none; }
+  .perf { margin-top: 8px; font-size: 11.5px; color: #8f9ab0; line-height: 1.4; }
+  .status { margin-top: 12px; font-size: 12px; color: #c9d2e3; line-height: 1.4; }
+  .clock { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.08); }
+  .clock-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+  #hour { font-size: 20px; font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; margin: 10px 0 6px; accent-color: #f0a050; }
+  .check { font-size: 12px; color: #9aa4b8; display: flex; gap: 6px; align-items: center; cursor: pointer; }
+  .unsupported { position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    text-align: center; padding: 24px; font-size: 16px; line-height: 1.5; }
+  .fallo { position: fixed; left: 16px; right: 16px; bottom: 16px; display: none; z-index: 20; padding: 14px 16px;
+    background: rgba(40, 8, 8, 0.92); color: #ffd9d9; font: 12px/1.45 ui-monospace, monospace; border-radius: 8px;
+    max-height: 45vh; overflow: auto; white-space: pre-wrap; user-select: text; }
+  .fallo strong { display: block; font: 600 15px system-ui, sans-serif; margin-bottom: 6px; color: #fff; }
+  .unsupported strong { display: block; font-size: 20px; margin-bottom: 8px; }
+  .credit { margin-top: 8px; font-size: 11px; opacity: 0.7; }
+  .console { position: fixed; right: 16px; bottom: 16px; width: min(560px, 60vw); display: none; z-index: 15;
+    background: rgba(8, 11, 20, 0.9); border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; padding: 10px; }
+  .console textarea { width: 100%; height: 130px; box-sizing: border-box; background: #0c1018; color: #d8e0f0;
+    border: 1px solid #2a3348; border-radius: 6px; font: 12.5px/1.45 ui-monospace, monospace; padding: 8px; resize: vertical; }
+  .console .row { display: flex; gap: 8px; align-items: center; margin-top: 6px; font-size: 12px; color: #9aa4b8; }
+  .console button { background: #f0a050; color: #1a1205; border: 0; border-radius: 5px; padding: 5px 12px; font-weight: 600; cursor: pointer; }
+  .console button.sec { background: #2a3348; color: #d8e0f0; }
+  .console pre { max-height: 140px; overflow: auto; margin: 6px 0 0; font: 11.5px/1.4 ui-monospace, monospace; color: #c9d2e3; white-space: pre-wrap; }
+  .console-btn { position: fixed; right: 16px; bottom: 16px; z-index: 14; background: rgba(8,11,20,0.8); color: #d8e0f0;
+    border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 6px 10px; font-size: 12px; cursor: pointer; }
+  .credit a { color: inherit; }
+  /* Pantalla de carga: logo, barra y estado; se va cuando el mundo ya se ve (window.bvReady). */
+  #loading { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; background: radial-gradient(ellipse at 50% 120%, #1c2a4a 0%, #0a0f1c 55%, #04060b 100%);
+    transition: opacity 0.9s ease; }
+  #loading.gone { opacity: 0; pointer-events: none; }
+  #loading .sky { position: absolute; left: 0; right: 0; bottom: 0; height: 34vh; opacity: 0.55;
+    background: linear-gradient(to top, #04060b 0%, transparent 100%); }
+  #loading .city { position: absolute; left: 0; right: 0; bottom: 0; height: 26vh; opacity: 0.35; }
+  .logo { position: relative; text-align: center; line-height: 0.86; user-select: none; }
+  .logo .l1, .logo .l2 { display: block; font-weight: 900; font-style: italic; letter-spacing: -0.02em;
+    text-transform: uppercase; background: linear-gradient(180deg, #ffffff 0%, #c9d8f5 55%, #7ea2e0 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 6px 18px rgba(80, 140, 255, 0.35)); }
+  .logo .l1 { font-size: clamp(42px, 9vw, 120px); }
+  .logo .l2 { font-size: clamp(54px, 12vw, 160px); margin-left: 0.6em; }
+  .logo .wind { display: block; height: 6px; margin: 14px auto 0; width: 62%; border-radius: 3px;
+    background: linear-gradient(90deg, transparent, #f2c27a 20%, #ffffff 50%, #7ea2e0 80%, transparent);
+    animation: wind 2.4s ease-in-out infinite; }
+  @keyframes wind { 0%, 100% { transform: translateX(-6%); opacity: 0.6; } 50% { transform: translateX(6%); opacity: 1; } }
+  .load-bar { width: min(460px, 70vw); height: 6px; margin-top: 46px; border-radius: 3px; background: rgba(255,255,255,0.1); overflow: hidden; }
+  .load-bar div { height: 100%; width: 0%; border-radius: 3px; background: linear-gradient(90deg, #7ea2e0, #f2c27a);
+    transition: width 0.4s ease; }
+  .load-text { margin-top: 14px; font-size: 13px; color: #9aa4b8; font-variant-numeric: tabular-nums; min-height: 1.4em; text-align: center; max-width: 70vw; }
+  .load-tip { position: absolute; bottom: 7vh; font-size: 13px; color: #6f7a90; text-align: center; max-width: 70vw; }
+</style>
+</head>
+<body>
+<canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
+<div id="loading">
+  <svg class="city" viewBox="0 0 1200 200" preserveAspectRatio="none" aria-hidden="true">
+    <path fill="#0e1830" d="M0 200V120h40v-30h30v50h25V70h20l5-25 5 25h20v60h30V95h45v45h25V60h35v80h20V100h30v-40l15-30 15 30v40h30v40h40V85h50v55h20V40h10V0h4v40h10v100h30V90h40v50h25V75h45v65h30v-50h35v50h40V60h20v80h30V100h50v40h25V80h40v60h40V110h30v90z"/>
+  </svg>
+  <div class="sky"></div>
+  <div class="logo"><span class="l1">Buenos</span><span class="l2">Vientos</span><span class="wind"></span></div>
+  <div class="load-bar"><div id="loadFill"></div></div>
+  <div class="load-text" id="loadText">Cargando el motor...</div>
+  <div class="load-tip" id="loadTip"></div>
+</div>
+
+<div class="panel">
+  <h1>Buenos Vientos</h1>
+  <div class="sub">Motor propio en C++ + WebGPU · <span id="version"></span></div>
+  <div class="zone" id="zone">-</div>
+  <div class="stats">
+    <span class="label">Cuadros por segundo</span><span id="fps">-</span>
+    <span class="label">Tiempo por frame</span><span id="avg">-</span>
+    <span class="label">Peor frame (1 s)</span><span id="max">-</span>
+  </div>
+  <div class="perf" id="perf"></div>
+  <div class="status" id="status">Cargando el motor...</div>
+  <div class="clock">
+    <div class="clock-row"><span class="label">Hora en la ciudad</span><span id="hour">--:--</span></div>
+    <input type="range" id="slider" min="0" max="1000" value="500">
+    <label class="check"><input type="checkbox" id="auto"> Que pase el tiempo solo (1 día = 48 minutos)</label>
+    <label class="check">Volumen <input type="range" id="volumen" min="0" max="100" step="1" value="80"> <span id="volnum">80</span></label>
+    <label class="check"><input type="checkbox" id="mute"> Silencio</label>
+    <label class="check"><input type="checkbox" id="contacto" checked> Sombras de contacto (finas, en pantalla)</label>
+    <label class="check"><input type="checkbox" id="dinres" checked> Resolución dinámica (escena entre 60% y 100%, reconstruida por el TAA, si la GPU no llega a 60)</label>
+    <label class="check"><input type="checkbox" id="desenfoque" checked> Desenfoque de movimiento (por objeto: el auto que manejás queda nítido)</label>
+    <label>Curva de tonos <select id="tonos" style="background:#1a2030;color:#c8d0e0;border:1px solid #333c50;border-radius:4px;font-size:12px">
+      <option value="1" selected>ACES</option>
+      <option value="0">AgX</option>
+      <option value="2">Hable</option>
+    </select></label>
+    <label>Ritmo <select id="ritmo" style="background:#1a2030;color:#c8d0e0;border:1px solid #333c50;border-radius:4px;font-size:12px">
+      <option value="0" selected>Automático (60, o 30 parejos si no llega)</option>
+      <option value="1">60 por segundo</option>
+      <option value="2">30 por segundo</option>
+      <option value="3">Sin tope</option>
+    </select></label>
+    <label class="check">Ir a
+      <select id="goto" style="background:#1a2030;color:#c8d0e0;border:1px solid #333c50;border-radius:4px;font-size:12px;max-width:190px">
+        <option value="">elegí un lugar...</option>
+      </select>
+    </label>
+    <button id="bench" style="margin:4px 0;background:#1a2030;color:#c8d0e0;border:1px solid #333c50;border-radius:4px;font-size:12px;padding:3px 8px;cursor:pointer">Prueba de rendimiento (1 min)</button>
+    <button id="benchscale" style="margin:4px 0;background:#1a2030;color:#c8d0e0;border:1px solid #333c50;border-radius:4px;font-size:12px;padding:3px 8px;cursor:pointer">Prueba de escala (150 autos, 30 chocados)</button>
+    <div id="benchout" style="display:none;font-size:11px;line-height:1.45;color:#aab4c8;background:#10141e;border:1px solid #2a3244;border-radius:4px;padding:6px 8px;margin:2px 0 6px;user-select:text"></div>
+    <label class="check">Niebla <input type="range" id="niebla" min="0" max="2" step="0.05" value="0.6"></label>
+    <label class="check">Neblina con rayos de sol <input type="range" id="rayos" min="0" max="1.5" step="0.05" value="1"></label>
+    <label class="check">Rayos X
+      <select id="xray" style="background:#1a2030;color:#c8d0e0;border:1px solid #333c50;border-radius:4px;font-size:12px">
+        <option value="0">apagado</option>
+        <option value="1">cantidad de luces</option>
+        <option value="2">solo la luz</option>
+        <option value="3">normales</option>
+        <option value="4">luz rebotada</option>
+        <option value="5">sombras</option>
+      </select>
+    </label>
+    <div class="check" style="display:block;margin-top:4px;opacity:0.6;font-size:11px">Árboles: "Realistic Game-Ready Tree Models" de <a href="https://sketchfab.com/3d-models/realistic-game-ready-tree-models-707084bf06ba4e3294f04ec5afdf8f08" target="_blank" style="color:inherit">syedmutawasimali28</a> (CC-BY-4.0)</div>
+    <details class="check" style="display:block;margin-top:4px">
+      <summary style="cursor:pointer">Pasto 3D</summary>
+      <label class="check"><input type="checkbox" class="grass" data-k="0" checked> Prendido</label>
+      <label class="check"><input type="checkbox" class="grass" data-k="1" checked> Hojas cerca (LOD0)</label>
+      <label class="check"><input type="checkbox" class="grass" data-k="2" checked> Matas lejos (LOD1)</label>
+      <label class="check">Densidad <input type="range" class="grass" data-k="3" min="0.1" max="2" step="0.05" value="1"></label>
+      <label class="check">Presupuesto (miles) <input type="range" class="grass" data-k="12" min="50" max="600" step="10" value="300"></label>
+      <label class="check">Densidad completa hasta (m) <input type="range" class="grass" data-k="13" min="1" max="20" step="0.5" value="4"></label>
+      <label class="check">Caída con la distancia <input type="range" class="grass" data-k="14" min="0.75" max="2.5" step="0.05" value="2"></label>
+      <label class="check">Fin LOD0 (m) <input type="range" class="grass" data-k="4" min="5" max="40" step="1" value="15"></label>
+      <label class="check">Fin del pasto (m) <input type="range" class="grass" data-k="5" min="10" max="48" step="1" value="45"></label>
+      <label class="check">Alto <input type="range" class="grass" data-k="6" min="0.5" max="5" step="0.1" value="1"></label>
+      <label class="check">Matas <input type="range" class="grass" data-k="7" min="0" max="1" step="0.05" value="0.35"></label>
+      <label class="check">Viento <input type="range" class="grass" data-k="8" min="0" max="1.5" step="0.05" value="0.35"></label>
+      <label class="check">Ráfagas <input type="range" class="grass" data-k="9" min="0" max="2" step="0.05" value="0.25"></label>
+      <label class="check">Contraluz <input type="range" class="grass" data-k="10" min="0" max="2" step="0.05" value="0.35"></label>
+      <label class="check">Ver
+        <select class="grass" data-k="11" style="background:#1a2030;color:#c8d0e0;border:1px solid #333c50;border-radius:4px;font-size:12px">
+          <option value="0">normal</option><option value="1">tiles</option><option value="2">densidad</option>
+          <option value="3">seco</option><option value="4">tinte</option><option value="5">solo terreno</option>
+          <option value="6">solo pasto 3D</option><option value="7">sin luz (terreno y hojas)</option>
+        </select>
+      </label>
+    </details>
+  </div>
+  <div class="keys">
+    <b>Clic</b><span>tomar el control</span>
+    <b>W A S D</b><span>caminar / manejar</span>
+    <b>Shift</b><span>correr</span>
+    <b>Espacio</b><span>saltar / freno de mano</span>
+    <b>F</b><span>subir o bajar de un auto</span>
+    <b>R</b><span>lluvia sí / no</span>
+    <b>M</b><span>misión de prueba (script)</span>
+    <b>Mouse / flechas</b><span>cámara</span>
+    <b>Rueda</b><span>acercar o alejar</span>
+    <b>Esc</b><span>soltar el mouse</span>
+  </div>
+  <div class="credit">Mapa: © colaboradores de <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> (ODbL)</div>
+</div>
+
+<div class="fallo" id="fallo"></div>
+<button class="console-btn" id="consoleBtn">Consola de scripts</button>
+<div class="console" id="console">
+  <textarea id="code" spellcheck="false">// Scripts del motor (docs/SCRIPTS.md). Ctrl+Enter corre.
+var yo = Player.ped();
+var auto = Vehicle.spawn("car4", Entity.position(yo) + Entity.forward(yo) * 6.0, Entity.heading(yo));
+print(Vehicle.displayName("car4"), ": ", Vehicle.handling(auto, "mass"), " kg, ", Vehicle.handling(auto, "engineTorque"), " Nm");</textarea>
+  <div class="row"><button id="run">Correr</button><button class="sec" id="natives">Ver comandos</button>
+    <button class="sec" id="closeConsole">Cerrar</button><span>Lenguaje y comandos: docs/SCRIPTS.md</span></div>
+  <pre id="out"></pre>
+</div>
+<div class="hint" id="hint">Hacé clic en la ciudad para jugar</div>
+
+<div class="unsupported" id="unsupported">
+  <div><strong>Este navegador no tiene WebGPU</strong>
+  Probá con Chrome o Edge actualizados en la compu, o Safari 26 en adelante.</div>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  let userDragging = false;
+
+  function phaseToHour(p) {
+    const minutes = Math.floor(p * 24 * 60);
+    const h = String(Math.floor(minutes / 60)).padStart(2, '0');
+    const m = String(minutes % 60).padStart(2, '0');
+    return h + ':' + m;
+  }
+
+  // El motor llama a estas dos funciones desde C++ (EM_ASM).
+  // Si el motor se cae o se traba, mostrarlo en pantalla con el ultimo registro (para poder reportarlo).
+  const registro = [];
+  let ultimoFrame = 0, fallo = false;
+  const anotar = (t) => { registro.push(t); if (registro.length > 40) registro.shift(); };
+  const mostrarFallo = (titulo, detalle) => {
+    if (fallo) return;
+    fallo = true;
+    const el = $('fallo');
+    el.innerHTML = '<strong></strong>';
+    el.querySelector('strong').textContent = titulo + ' (seleccioná este texto y pasámelo)';
+    el.appendChild(document.createTextNode((detalle ? detalle + '\n\n' : '') + registro.slice(-15).join('\n') +
+      '\n\n' + navigator.userAgent + '\n' + ($('perf').textContent || '')));
+    el.style.display = 'block';
+    if (document.pointerLockElement) document.exitPointerLock();
+  };
+  // El navegador rechaza el bloqueo del mouse si se pide justo despues de soltarlo (Esc y click
+  // enseguida): no es una caida, alcanza con volver a hacer click.
+  const esBloqueoMouse = (r) => /pointer ?lock/i.test(String(r && (r.message || r)));
+  window.bvGpuError = () => setTimeout(() => mostrarFallo('Error de la GPU', ''), 0);
+  window.addEventListener('error', (e) => esBloqueoMouse(e.message || e.error) ? e.preventDefault() : mostrarFallo('El juego se cayó', String(e.message || e.error) +
+    (e.error && e.error.stack ? '\n' + String(e.error.stack).split('\n').slice(0, 14).join('\n') : '')));
+  window.addEventListener('unhandledrejection', (e) => {
+    if (esBloqueoMouse(e.reason)) { e.preventDefault(); anotar('Bloqueo del mouse rechazado: hacé click de nuevo'); return; }
+    mostrarFallo('El juego se cayó', String(e.reason));
+  });
+  setInterval(() => {  // perro guardian: el motor deja de dibujar con la pestaña visible
+    if (ultimoFrame && !document.hidden && performance.now() - ultimoFrame > 15000)
+      mostrarFallo('El motor dejó de dibujar', 'Último frame hace ' + ((performance.now() - ultimoFrame) / 1000).toFixed(0) + ' s');
+  }, 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && ultimoFrame) ultimoFrame = performance.now(); });
+
+  let volumenPuesto = false;
+  window.bvStats = (fps, avgMs, maxMs, dayPhase, hud, perf) => {
+    ultimoFrame = performance.now();
+    if (!volumenPuesto && window.bvAplicarVolumen) { volumenPuesto = true; window.bvAplicarVolumen(); }
+    // El radar va a la derecha del panel (si no, el panel lo tapa). Se manda cuando cambia.
+    const panel = document.querySelector('.panel'), cv = $('canvas');
+    const visible = panel && getComputedStyle(panel).display !== 'none';
+    const inset = visible && cv.clientWidth > 0 ? panel.getBoundingClientRect().right / cv.clientWidth : 0;
+    if (Math.abs(inset - (window.bvInset ?? -1)) > 0.002) {
+      window.bvInset = inset;
+      try { Module.ccall('bv_set_hud_inset', null, ['number'], [inset]); } catch (e) {}
+    }
+    if (hud) $('zone').textContent = hud;
+    if (perf) $('perf').textContent = perf;
+    $('fps').textContent = fps.toFixed(0);
+    $('avg').textContent = avgMs.toFixed(2) + ' ms';
+    $('max').textContent = maxMs.toFixed(2) + ' ms';
+    $('hour').textContent = phaseToHour(dayPhase);
+    if (!userDragging) $('slider').value = Math.round(dayPhase * 1000);
+  };
+  // Pantalla de carga: la descarga llena hasta el 80%; despues, las etapas del motor.
+  const carga = { pct: 0, listo: false };
+  const tips = ['Con F te subís a cualquier auto.', 'Los contenedores se corren y se abollan si los chocás.',
+                'En el Taller El Pistón te dejan el auto como nuevo.', 'R prende y apaga la lluvia.',
+                'Los carteles y los bolardos se rompen; las columnas de semáforo casi no.'];
+  let tipIdx = Math.floor(Math.random() * tips.length);
+  const nextTip = () => { const t = document.getElementById('loadTip'); if (t) t.textContent = tips[tipIdx++ % tips.length]; };
+  nextTip();
+  const tipTimer = setInterval(nextTip, 4500);
+  window.bvLoadProgress = (pct, text) => {
+    carga.pct = Math.max(carga.pct, pct);
+    const f = document.getElementById('loadFill'); if (f) f.style.width = carga.pct.toFixed(1) + '%';
+    if (text) { const t = document.getElementById('loadText'); if (t) t.textContent = text; }
+  };
+  window.bvReady = () => {
+    if (carga.listo) return;
+    carga.listo = true;
+    window.bvLoadProgress(100, 'Listo');
+    clearInterval(tipTimer);
+    setTimeout(() => document.getElementById('loading').classList.add('gone'), 250);
+    setTimeout(() => document.getElementById('loading').remove(), 1400);
+  };
+  window.bvStatus = (text) => {
+    $('status').textContent = text;
+    if (text.startsWith('Conectando')) window.bvLoadProgress(82, 'Conectando con la placa de video...');
+    else if (text.startsWith('Armando')) window.bvLoadProgress(88, 'Armando la ciudad...');
+    else if (text.startsWith('Listo')) window.bvLoadProgress(96, 'Preparando la primera imagen...');
+    else window.bvLoadProgress(carga.pct, text);  // errores: se quedan en la pantalla de carga
+  };
+  document.querySelectorAll('.grass').forEach((el) => el.addEventListener(el.type === 'range' ? 'input' : 'change', (e) => {
+    const t = e.target;
+    const v = t.type === 'checkbox' ? (t.checked ? 1 : 0) : Number(t.value) * (t.dataset.k === '12' ? 1000 : 1);
+    Module.ccall('bv_grass', null, ['number', 'number'], [Number(t.dataset.k), v]);
+  }));
+  // Transportador: los lugares los pone el juego (world.json "places" y las estaciones del tren).
+  const fillPlaces = () => {
+    const sel = $('goto');
+    if (sel.options.length > 1 || !Module.ccall) return;
+    let list = '';
+    try { list = Module.ccall('bv_places', 'string', [], []); } catch (err) { return; }
+    list.split('\n').filter((n) => n).forEach((name, i) => sel.add(new Option(name.replace('Estacion', 'Estación'), String(i))));
+  };
+  $('goto').addEventListener('pointerdown', fillPlaces);
+  $('goto').addEventListener('focus', fillPlaces);
+  $('goto').addEventListener('change', (e) => {
+    if (e.target.value === '') return;
+    Module.ccall('bv_go', null, ['number'], [Number(e.target.value)]);
+    e.target.value = '';
+    e.target.blur();
+  });
+  const startBench = (e, scale) => {
+    if (scale) Module.ccall('bv_bench_scale', null, ['number', 'number'], [150, 30]);
+    else Module.ccall('bv_bench', null, [], []);
+    e.target.blur();
+    $('benchout').style.display = 'block';
+    $('benchout').textContent = 'Midiendo... (no muevas nada, cerca de un minuto)';
+    const wait = setInterval(() => {
+      const r = window.bvBenchResult;
+      if (!r) return;
+      clearInterval(wait);
+      window.bvBenchResult = null;
+      const names = {sombras: 'Sombras', profundidad: 'Profundidad + SSAO', escena: 'Escena', agua: 'Agua', reflejos: 'Reflejos',
+                     post: 'Post', pasto_generar: 'Pasto (generar)', pasto_dibujar: 'Pasto (dibujar)',
+                     sombras_focos: 'Sombras de focos', sonda: 'Sonda de reflejos', ssao: 'SSAO y luz rebotada',
+                     nubes: 'Nubes', luz_volumetrica: 'Luz volumétrica', gpu_cuadro: 'GPU, cuadro entero'};
+      const budget = {sombras: 2, profundidad: 2.5, escena: 5, agua: 0.5, reflejos: 1, post: 2, pasto_generar: 0.5, pasto_dibujar: 1.5,
+                      sombras_focos: 1.5, sonda: 0.7, ssao: 1.2, nubes: 0.6, luz_volumetrica: 1.0, gpu_cuadro: 13};
+      // Arriba de todo, el boton de copiar (el panel puede quedar mas alto que la pantalla).
+      let h = `<button id="benchcopy" style="margin:0 0 6px;width:100%;font-size:12px;padding:4px;background:#2a4a7a;color:#fff;border:1px solid #3d66a8;border-radius:4px;cursor:pointer">Copiar resultado</button>`;
+      if (r.autos !== undefined) h += `${r.circulando} autos circulando (${r.lejanos_simples} lejanos simplificados) · ${r.chocados} chocados<br>`;
+      h += `<b style="color:#e8ecf4">${(1000 / r.frame_ms).toFixed(0)} cuadros/s</b> · frame ${r.frame_ms.toFixed(1)} ms · peor ${r.peor_frame_ms.toFixed(1)} ms<br>` +
+           `CPU ${r.cpu_ms.toFixed(1)} ms · GPU ${r.gpu_ms.toFixed(1)} ms<br>`;
+      for (const k in r.secciones) {
+        const v = r.secciones[k], over = v > budget[k];
+        h += `<span style="color:${over ? '#f08a6a' : '#8fc89a'}">${names[k] || k}: ${v.toFixed(2)} / ${budget[k]} ms</span><br>`;
+      }
+      // Por lugar: si el cuadro tarda mucho mas que CPU + GPU medidas, se va en algo que no se mide.
+      for (const l of r.lugares || []) {
+        h += `<span style="color:${l.frame_ms > 20 ? '#f08a6a' : '#8fc89a'}">${l.lugar}: ${(1000 / l.frame_ms).toFixed(0)} c/s · CPU ${l.cpu_ms.toFixed(1)} · GPU ${(l.gpu_cuadro_ms || l.gpu_ms).toFixed(1)} ms · ${l.tirones} tirones</span><br>`;
+      }
+      $('benchout').innerHTML = h;
+      const text = JSON.stringify(Object.assign({version: BV_VERSION, hilos: !!self.crossOriginIsolated && motorCargado.startsWith('mt/'), motivo_sin_hilos: motivoSinHilos}, r));
+      $('benchcopy').addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        let ok = false;
+        try { await navigator.clipboard.writeText(text); ok = true; } catch (_) {}
+        if (!ok) {  // dentro de un iframe el portapapeles puede estar bloqueado: el metodo viejo
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.cssText = 'position:fixed;left:0;top:0;opacity:0';
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          try { ok = document.execCommand('copy'); } catch (_) {}
+          ta.remove();
+        }
+        if (!ok) {  // ultimo recurso: el texto a la vista y ya seleccionado
+          $('benchout').insertAdjacentHTML('beforeend', `<textarea readonly style="width:100%;height:90px;font-size:10px;margin-top:4px">${text}</textarea>`);
+          const t = $('benchout').querySelector('textarea');
+          t.focus();
+          t.select();
+        }
+        $('benchcopy').textContent = ok ? 'Copiado: pegalo en el chat' : 'Seleccionado abajo: Cmd+C';
+      });
+    }, 500);
+  };
+  $('bench').addEventListener('click', (e) => startBench(e, false));
+  $('benchscale').addEventListener('click', (e) => startBench(e, true));
+  $('niebla').addEventListener('input', (e) => Module.ccall('bv_set_post', null, ['number', 'number'], [8, Number(e.target.value)]));
+  $('rayos').addEventListener('input', (e) => Module.ccall('bv_set_post', null, ['number', 'number'], [2, Number(e.target.value)]));
+  $('contacto').addEventListener('change', (e) => Module.ccall('bv_set_post', null, ['number', 'number'], [0, e.target.checked ? 1 : 0]));
+  $('dinres').addEventListener('change', (e) => Module.ccall('bv_set_post', null, ['number', 'number'], [9, e.target.checked ? 1 : 0]));
+  $('desenfoque').addEventListener('change', (e) => Module.ccall('bv_set_post', null, ['number', 'number'], [11, e.target.checked ? 0.5 : 0]));
+  $('tonos').addEventListener('change', (e) => Module.ccall('bv_set_post', null, ['number', 'number'], [12, Number(e.target.value)]));
+  $('ritmo').addEventListener('change', (e) => Module.ccall('bv_set_post', null, ['number', 'number'], [10, Number(e.target.value)]));
+  // Los textos de los scripts (ayuda, subtitulos, avisos, carteles, fundido) los dibuja el motor
+  // (bv::Hud), igual que en PC.
+  // Consola: lo que se escribe aca no llega al juego (no mueve al personaje).
+  const salida = (t) => { const o = $('out'); o.textContent += t + '\n'; o.scrollTop = o.scrollHeight; };
+  const abrirConsola = (abrir) => {
+    $('console').style.display = abrir ? 'block' : 'none';
+    $('consoleBtn').style.display = abrir ? 'none' : 'block';
+    if (abrir) { if (document.pointerLockElement) document.exitPointerLock(); $('code').focus(); }
+  };
+  $('consoleBtn').onclick = () => abrirConsola(true);
+  $('closeConsole').onclick = () => abrirConsola(false);
+  const correr = () => { salida('> corriendo'); Module.ccall('bv_run_script', null, ['string'], [$('code').value]); };
+  $('run').onclick = correr;
+  $('natives').onclick = () => {
+    const lista = Module.ccall('bv_script_natives', 'string', [], []).trim().split('\n').sort();
+    salida(lista.length + ' comandos: ' + lista.join(', '));
+  };
+  for (const ev of ['keydown', 'keyup', 'keypress'])
+    $('console').addEventListener(ev, (e) => {
+      e.stopPropagation();
+      if (ev === 'keydown' && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); correr(); }
+    });
+
+  // Captura de frame desde el motor (herramienta de desarrollo: Module.ccall('bv_capture')).
+  window.bvCapture = (ptr, w, h, bytesPerRow, bgra) => {
+    const out = document.createElement('canvas'); out.width = w; out.height = h;
+    const ctx = out.getContext('2d'); const img = ctx.createImageData(w, h);
+    for (let y = 0; y < h; y++) {
+      const row = HEAPU8.subarray(ptr + y * bytesPerRow, ptr + y * bytesPerRow + w * 4);
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4, j = x * 4;
+        img.data[i] = row[j + (bgra ? 2 : 0)]; img.data[i + 1] = row[j + 1];
+        img.data[i + 2] = row[j + (bgra ? 0 : 2)]; img.data[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    window.bvLastCapture = out.toDataURL('image/png');
+  };
+  document.addEventListener('pointerlockchange', () => {
+    $('hint').style.display = document.pointerLockElement ? 'none' : 'block';
+  });
+
+  $('slider').addEventListener('input', (e) => {
+    userDragging = true;
+    $('auto').checked = false;
+    const phase = e.target.value / 1000;
+    $('hour').textContent = phaseToHour(phase);
+    Module.ccall('bv_set_day_phase', null, ['number'], [phase]);
+  });
+  $('slider').addEventListener('change', () => { userDragging = false; });
+  $('xray').addEventListener('change', (e) => {
+    Module.ccall('bv_set_post', null, ['number', 'number'], [6, Number(e.target.value)]);
+    e.target.blur();  // que las teclas vuelvan al juego
+  });
+  // Volumen y silencio: se guardan en el navegador (si deja) para la proxima vez.
+  const guardado = (k, def) => { try { const v = localStorage.getItem(k); return v === null ? def : v; } catch (e) { return def; } };
+  const guardar = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+  $('volumen').value = guardado('bv_volumen', '80');
+  $('mute').checked = guardado('bv_silencio', '0') === '1';
+  $('volnum').textContent = $('volumen').value;
+  window.bvAplicarVolumen = () => {
+    if (!Module.ccall) return;
+    try { Module.ccall('bv_set_volume', null, ['number'], [$('mute').checked ? 0 : Number($('volumen').value) / 100]); } catch (e) {}
+  };
+  $('volumen').addEventListener('input', (e) => {
+    $('volnum').textContent = e.target.value;
+    guardar('bv_volumen', e.target.value);
+    window.bvAplicarVolumen();
+  });
+  $('mute').addEventListener('change', (e) => {
+    guardar('bv_silencio', e.target.checked ? '1' : '0');
+    window.bvAplicarVolumen();
+    e.target.blur();
+  });
+  $('auto').addEventListener('change', (e) => {
+    Module.ccall('bv_set_auto_time', null, ['number'], [e.target.checked ? 1 : 0]);
+  });
+
+  // Hilos (docs/DEPLOY.md): sin COOP/COEP el navegador no da SharedArrayBuffer. En hostings sin
+  // encabezados (GitHub Pages) coi-sw.js los agrega: la primera vez se registra y se recarga una
+  // sola vez (sessionStorage evita un bucle si el navegador no lo deja).
+  // La publicacion lleva las dos versiones: la de un hilo (index.js) y, en mt/, la de hilos. Si el
+  // navegador quedo aislado se usa la de hilos (fisica, oclusion, poses y streaming en todos los
+  // nucleos); si no, la de un hilo. Asi anda en cualquier navegador. ?hilos=0 fuerza la de un hilo.
+  const estaEsLaDeHilos = false;
+  // Version de la publicacion (tools/deploy_pages.py la escribe aca). Se ve en el panel y va en el
+  // resultado de la prueba de rendimiento. El motor se pide con ?v=version: el navegador no puede
+  // quedarse con uno viejo en el cache si la pagina es nueva.
+  const BV_VERSION = '66 (28/11 06:30)';
+  $('version').textContent = BV_VERSION.startsWith('__') ? 'versión local' : 'versión ' + BV_VERSION;
+  let motorCargado = '';
+  let motivoSinHilos = '';
+  let esperandoAislamiento = false;
+  let errorDelServiceWorker = '';
+  // Hasta 3 recargas por pestaña para quedar aislada: la primera registra el service worker y las otras
+  // cubren cuando no llega a controlar la pagina (una recarga forzada con Cmd+Shift+R lo saltea, o se
+  // activo despues de la recarga). Si el registro falla (datos del sitio bloqueados, modo privado), el
+  // motivo queda en la linea de la version.
+  const intentos = parseInt(sessionStorage.getItem('bv-coi-intentos') || '0', 10);
+  if (!self.crossOriginIsolated && 'serviceWorker' in navigator && self.isSecureContext && intentos < 3 &&
+      !/[?&]hilos=0/.test(location.search)) {
+    esperandoAislamiento = true;
+    sessionStorage.setItem('bv-coi-intentos', String(intentos + 1));
+    navigator.serviceWorker.register('coi-sw.js')
+      .then((reg) => reg.update().catch(() => {}).then(() => navigator.serviceWorker.ready))
+      .then(() => location.reload())
+      .catch((e) => { errorDelServiceWorker = String(e && e.message || e); esperandoAislamiento = false; cargarMotor(); });
+  } else if (self.crossOriginIsolated) {
+    sessionStorage.removeItem('bv-coi-intentos');
+  }
+  function cargarScript(src) {
+    motorCargado = src;
+    const s = document.createElement('script');
+    s.src = BV_VERSION.startsWith('__') ? src : src + '?v=' + encodeURIComponent(BV_VERSION);
+    s.async = true;
+    s.onerror = () => mostrarFallo('No se pudo bajar el motor', src);
+    document.body.appendChild(s);
+  }
+  function cargarMotor() {
+    if (estaEsLaDeHilos) {
+      if (!self.crossOriginIsolated) {
+        mostrarFallo('Esta versión usa hilos y el servidor no los habilita',
+                     'Faltan los encabezados Cross-Origin-Opener-Policy: same-origin y ' +
+                     'Cross-Origin-Embedder-Policy: require-corp (ver docs/DEPLOY.md), o publicar la versión sin hilos.');
+        return;
+      }
+      cargarScript('index.js');
+      return;
+    }
+    const hilos = self.crossOriginIsolated && typeof SharedArrayBuffer !== 'undefined' &&
+                  (navigator.hardwareConcurrency || 1) > 1 && !/[?&]hilos=0/.test(location.search);
+    // Por que no hay hilos (va en la linea de la version y en el JSON de la prueba): asi se ve sin consola.
+    motivoSinHilos = hilos ? '' : /[?&]hilos=0/.test(location.search) ? 'pedido con ?hilos=0'
+        : !self.isSecureContext ? 'la pagina no es segura (https)'
+        : !('serviceWorker' in navigator) ? 'el navegador no tiene service workers'
+        : errorDelServiceWorker ? 'no se pudo registrar el service worker (' + errorDelServiceWorker + ')'
+        : !navigator.serviceWorker.controller ? 'el service worker no controla la pagina (' + intentos + ' recargas)'
+        : !self.crossOriginIsolated ? 'la pagina no quedo aislada (COOP/COEP)'
+        : typeof SharedArrayBuffer === 'undefined' ? 'sin SharedArrayBuffer' : 'un solo nucleo';
+    const marcar = (src) => {
+      $('version').textContent += src.startsWith('mt/') ? ' · con hilos (' + navigator.hardwareConcurrency + ' núcleos)'
+                                                        : ' · un hilo: ' + (motivoSinHilos || 'falta la versión con hilos');
+      cargarScript(src);
+    };
+    if (!hilos) { marcar('index.js'); return; }
+    fetch('mt/index.js', {method: 'HEAD'}).then((r) => marcar(r.ok ? 'mt/index.js' : 'index.js'))
+      .catch(() => marcar('index.js'));
+  }
+
+  var Module = {
+    canvas: $('canvas'),
+    // El .wasm con la misma version que la pagina (ver BV_VERSION).
+    locateFile: (path, dir) => dir + path + (BV_VERSION.startsWith('__') || !path.endsWith('.wasm') ? '' : '?v=' + encodeURIComponent(BV_VERSION)),
+    print: (t) => { anotar(t); console.log(t); if (/ (script|ayuda|subtitulo) /.test(t) && typeof salida === 'function') salida(t.replace(/^\[[^\]]*\]\s*/, '')); },
+    printErr: (t) => {
+      anotar(t); console.warn(t);
+      if (/ script /.test(t) && typeof salida === 'function') salida(t.replace(/^\[[^\]]*\]\s*/, ''));
+      if (/Se perdio el dispositivo/.test(t)) mostrarFallo('Se perdió la GPU', t);
+    },
+    onAbort: (what) => mostrarFallo('El motor abortó', String(what)),
+    // Antes de arrancar: bajar los archivos del juego (texturas) y dejarlos en el sistema de
+    // archivos virtual, en la misma ruta que en PC. Asi el motor los abre con fopen igual.
+    preRun: [() => {
+      Module.addRunDependency('assets');
+      // Si la placa tiene texturas comprimidas BC (PC y Mac), se baja la version .bctN.png de cada
+      // textura (BC7 cocinado en el build, N = version del formato); si no esta (o es de otra
+      // version), la .png. El motor usa la que encuentre.
+      // Progreso de la descarga en el panel (hasta que el motor escribe su propio estado).
+      let bajados = 0, total = 0, megas = 0;
+      const progreso = () => {
+        $('status').textContent = 'Bajando archivos del juego: ' + bajados + ' de ' + total + ' (' + Math.round(megas) + ' MB)';
+        if (window.bvLoadProgress && total) window.bvLoadProgress(80 * bajados / total, 'Bajando el juego: ' + Math.round(megas) + ' MB');
+      };
+      const writeFile = (f, buf) => {
+        bajados++;
+        megas += buf.byteLength / 1048576;
+        progreso();
+        const dir = ('/assets/' + f).split('/').slice(0, -1);
+        for (let i = 2; i <= dir.length; ++i) {
+          const d = dir.slice(0, i).join('/');
+          try { Module.FS.mkdir(d); } catch (e) {}
+        }
+        Module.FS.writeFile('/assets/' + f, new Uint8Array(buf));
+      };
+      const bcSupport = navigator.gpu ? navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })
+        .then((a) => !!a && a.features.has('texture-compression-bc')).catch(() => false) : Promise.resolve(false);
+      // Cada archivo se pide con su huella (assets/hashes.json, la escribe tools/deploy_pages.py): el
+      // que no cambio sale del cache, el que cambio se baja seguro. Sin huellas (build local), tal cual.
+      const sinCache = BV_VERSION.startsWith('__') ? '' : '?v=' + encodeURIComponent(BV_VERSION);
+      let huellas = {};
+      const url = (f) => 'assets/' + f + (huellas[f] ? '?h=' + huellas[f] : '');
+      Promise.all([fetch('assets/manifest.json' + sinCache).then((r) => r.ok ? r.json() : []), bcSupport,
+                   fetch('assets/hashes.json' + sinCache).then((r) => r.ok ? r.json() : {}).catch(() => ({}))])
+        .then(([files, bc, h]) => { huellas = h; total = files.length; progreso(); return Promise.all(files.map((f) => {
+          // Un archivo que no esta (por ejemplo el PNG de una textura que en la web va solo en BC7) no
+          // se escribe: si no, la pagina de error del servidor quedaria como si fuera el archivo.
+          const plain = () => fetch(url(f)).then((r) => r.ok ? r.arrayBuffer().then((buf) => writeFile(f, buf)) : null);
+          if (!bc || !f.endsWith('.png')) return plain();
+          const bct = f.slice(0, -4) + '.bct1.png';
+          return fetch(url(bct)).then((r) => {
+            if (!r.ok) return plain();
+            return r.arrayBuffer().then((buf) => writeFile(bct, buf));
+          }).catch(plain);
+        })); })
+        .catch((e) => console.warn('No se pudieron bajar los archivos del juego', e))
+        .finally(() => Module.removeRunDependency('assets'));
+    }],
+  };
+
+  if (!navigator.gpu) {
+    $('unsupported').style.display = 'flex';
+    $('status').textContent = 'Sin WebGPU en este navegador';
+    if (window.bvLoadProgress) window.bvLoadProgress(0, 'Este navegador no tiene WebGPU. Probá con Chrome, Edge o Safari actualizados.');
+  }
+  if (!esperandoAislamiento) cargarMotor();
+</script>
+<!-- Emscripten pide este marcador; adentro de un template no corre: el motor lo carga cargarMotor(). -->
+<template><script async type="text/javascript" src="index.js"></script></template>
+</body>
+</html>

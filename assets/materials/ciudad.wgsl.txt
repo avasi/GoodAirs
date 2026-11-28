@@ -1,0 +1,83 @@
+// Materiales de Buenos Vientos (del juego, no del motor). El motor los compila dentro de su shader
+// de escena y los llama segun el tipo de superficie del vertice (ver materials/ciudad.json).
+//
+// Cada material recibe MatIn (punto, normal, vista, color del vertice, hora, capas extra en slots:
+// aca, los cuartos de los interiores) y la salida base del motor (MatOut, con el color del vertice y
+// la textura del tipo de superficie), y devuelve la salida cambiada. Funciones del motor
+// disponibles: hash2, valueNoise, interiorRoom.
+
+// Fachada (y la de ladrillo de los docks): pisos de 3,2 m, ventanas cada 2,6 m, local con
+// vidriera en planta baja; detras de cada vidrio, un cuarto falso (prendido de noche).
+fn bv_mat_fachada(i : MatIn, base : MatOut) -> MatOut {
+    var o = base;
+    o.rough = 0.85;
+    let brick = i.kind == 10u;
+    if (abs(i.n.y) >= 0.5) { return o; }
+    let tangent = vec2f(-i.n.z, i.n.x);
+    let u = dot(i.world.xz, tangent);
+    let h = i.world.y;
+    let cell = vec2f(u / 2.6, h / 3.2);
+    let id = floor(cell);
+    let local = fract(cell);
+    var glass = false;
+    if (h < 3.2) {
+        glass = local.x > 0.08 && local.x < 0.92 && local.y > 0.08 && local.y < 0.85;
+    } else {
+        glass = local.x > 0.22 && local.x < 0.78 && local.y > 0.28 && local.y < 0.82;
+        if (local.y < 0.06) { o.albedo = o.albedo * 1.15; }  // cornisa
+        // Marco de la ventana, apenas hundido: oscurece el borde.
+        let frame = min(min(local.x - 0.2, 0.8 - local.x), min(local.y - 0.26, 0.84 - local.y));
+        if (frame > -0.02 && frame < 0.0) { o.albedo = o.albedo * 0.55; }
+    }
+    // Mugre que chorrea debajo de cada ventana y variacion de revoque por edificio.
+    let streak = smoothstep(0.0, 0.28, local.y) * step(0.2, local.x) * step(local.x, 0.8);
+    o.albedo = o.albedo * mix(0.86, 1.0, streak) * (0.93 + 0.07 * hash2(floor(i.world.xz * 0.5) + id.y));
+    if (brick && !glass) {
+        // Marco claro de las ventanas de los docks.
+        let fr = min(min(local.x - 0.16, 0.84 - local.x), min(local.y - 0.2, 0.88 - local.y));
+        if (h >= 3.2 && fr > -0.06 && fr < 0.0) { o.albedo = vec3f(0.78, 0.76, 0.72); o.texStrength = 0.0; }
+    }
+    if (glass) {
+        o.glassy = true;
+        o.rough = 0.05;
+        let lit = hash2(id + vec2f(floor(i.world.x * 0.01), floor(i.world.z * 0.01)));
+        // Un cuarto detras de cada ventana; de noche, la mitad con la luz prendida.
+        var wuv = vec2f((local.x - 0.22) / 0.56, (local.y - 0.28) / 0.54);
+        if (h < 3.2) { wuv = vec2f((local.x - 0.08) / 0.84, (local.y - 0.08) / 0.77); }
+        let on = lit > 0.45 || h < 3.2;
+        var layer = i.slots.z;
+        if (on) { layer = select(i.slots.x, i.slots.y, hash2(id + vec2f(7.0, 3.0)) > 0.5); }
+        var room = vec3f(0.02, 0.025, 0.03);
+        if (layer >= 0 && !i.cheap) { room = interiorRoom(wuv, i.n, i.v, layer, i.roomLod); }
+        o.albedo = room * 0.22;
+        if (on) {
+            let warm = mix(vec3f(1.0, 0.8, 0.6), vec3f(0.85, 0.92, 1.0), step(0.9, lit));
+            var glow = room * 1.6;
+            if (i.cheap) { glow = vec3f(0.35); }  // en reflejos: sin cuarto, una luz pareja
+            o.emissive = glow * warm * smoothstep(0.25, 0.9, i.night);
+        }
+    }
+    return o;
+}
+
+// Asfalto: grano fino, parches mas lisos y oscuros (alquitran) donde brilla un poco.
+fn bv_mat_asfalto(i : MatIn, base : MatOut) -> MatOut {
+    var o = base;
+    let grain = hash2(floor(i.world.xz * 9.0));
+    let blotch = hash2(floor(i.world.xz * 0.35));
+    let tar = step(0.82, blotch);
+    o.albedo = o.albedo * (0.92 + 0.08 * grain) * (0.9 + 0.2 * blotch) * mix(1.0, 0.8, tar);
+    o.rough = mix(0.9, 0.72, tar) - grain * 0.04;
+    o.puddles = 1.0;  // la calle junta mas agua que la vereda
+    return o;
+}
+
+// Baldosas de vereda de 0,4 m, cada una de un tono apenas distinto.
+fn bv_mat_baldosa(i : MatIn, base : MatOut) -> MatOut {
+    var o = base;
+    let tile = fract(i.world.xz / 0.4);
+    let joint = min(min(tile.x, 1.0 - tile.x), min(tile.y, 1.0 - tile.y));
+    o.albedo = o.albedo * mix(0.78, 1.0, smoothstep(0.0, 0.06, joint)) * (0.94 + 0.08 * hash2(floor(i.world.xz / 0.4)));
+    o.rough = 0.88;
+    return o;
+}

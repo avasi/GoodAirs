@@ -1,0 +1,66 @@
+// Mision de prueba: aparece un taxi al lado tuyo; subite y llevalo a una esquina a unos 400 m.
+//
+// Lo que no hace falta escribir (lo hace el motor):
+//   - esperar a que cargue el modelo: Assets.load vuelve cuando esta;
+//   - fijarse en cada vuelta si el taxi se fundio: Mission.failIfDestroyed lo vigila solo;
+//   - borrar el taxi al final o si la mision falla: lo que crea un script se limpia solo.
+
+if (!Mission.start("Taxi de prueba")) { Script.exit(); }
+
+// Un destino en la calle, lejos de donde estas.
+func elegirDestino(desde) {
+    var mejor = desde;
+    var mejorDist = 0;
+    for (var i = 0; i < 12; i += 1) {
+        var angulo = random(0, 360);
+        var lejos = desde + vec(sin(angulo), 0, cos(angulo)) * 420.0;
+        var nodo = Road.closestNode(lejos);
+        var d = dist(desde, nodo);
+        if (d > mejorDist && d < 700) { mejor = nodo; mejorDist = d; }
+    }
+    return mejor;
+}
+
+// 1. El taxi, a un costado del jugador y mirando para el mismo lado.
+Assets.load("car5_taxi");
+var yo = Player.ped();
+var adelante = Entity.forward(yo);
+var costado = vec(adelante.z, 0, -adelante.x);
+var taxi = Vehicle.spawn("car5_taxi", Entity.position(yo) + costado * 3.5 + adelante * 4.0, Entity.heading(yo));
+Mission.failIfDestroyed(taxi, "fundiste el taxi");
+print("Taxi: ", Vehicle.displayName("car5_taxi"), ", ", Vehicle.handling(taxi, "mass"), " kg (handling.json)");
+
+// 2. Esperar a que se suba.
+Hud.help("Subite al taxi (F)");
+while (!Ped.isInVehicle(yo, taxi)) {
+    Draw.marker("arrow", Entity.position(taxi) + vec(0, 1.7, 0), 0.8, 255, 210, 60);
+    wait(0);
+}
+Hud.clearHelp();
+
+// 3. Llevarlo al destino.
+var destino = elegirDestino(Entity.position(taxi));
+var zona = World.zone(destino);
+if (zona == "") { zona = "la esquina marcada"; }
+Mission.objective("Lleva el taxi hasta " + zona);
+Marker.add("ground", destino, 4.0, 255, 210, 60);   // queda hasta que termina la mision
+var inicio = time();
+var ultimoAviso = time();
+while (true) {
+    var falta = dist(Entity.position(taxi), destino);
+    if (!Ped.isInVehicle(yo, taxi)) {
+        Hud.help("Volve al taxi (F)");
+    } else {
+        Hud.clearHelp();
+        if (time() - ultimoAviso > 4000) {
+            Hud.subtitle("Faltan " + round(falta) + " m hasta " + zona, 4200);
+            ultimoAviso = time();
+        }
+        if (falta < 6.0 && Entity.speed(taxi) < 3.0) { break; }
+    }
+    wait(0);
+}
+
+// 4. Listo.
+var segundos = round((time() - inicio) / 1000);
+Mission.pass("En " + segundos + " s. El motor quedo al " + round(Vehicle.engineHealth(taxi)) + "%.");
